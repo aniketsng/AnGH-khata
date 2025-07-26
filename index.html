@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ANGH</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --primary-color: #5e35b1;
+      --bg-color: #f4f4f6;
+      --text-color: #212121;
+      --card-bg: #ffffff;
+      --receive-color: #2e7d32;
+      --give-color: #d32f2f;
+      --button: #5e35b1;
+      --button-hover: #4527a0;
+      --shadow: rgba(0, 0, 0, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      background: var(--bg-color);
+      color: var(--text-color);
+    }
+    header {
+      background: var(--primary-color);
+      color: white;
+      padding: 18px 20px;
+      text-align: center;
+      font-size: 1.9em;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 6px var(--shadow);
+      border-radius: 0 0 12px 12px;
+    }
+    main { padding: 16px; max-width: 600px; margin: auto; }
+    input, button {
+      padding: 12px;
+      width: 100%;
+      margin-top: 10px;
+      font-size: 1em;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+    button {
+      background: var(--button);
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover { background: var(--button-hover); }
+    .customer-card {
+      background: var(--card-bg);
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px var(--shadow);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background-color 0.2s;
+    }
+    .customer-card:hover { background-color: #f0eefc; }
+    .customer-name { font-weight: bold; font-size: 1.1em; }
+    .balance { font-weight: bold; font-size: 1.05em; }
+    .credit { color: var(--receive-color); }
+    .debit { color: var(--give-color); }
+    .filter-row {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px;
+    }
+    .modal {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 4px 10px var(--shadow);
+    }
+    .bottom-bar {
+      position: fixed;
+      bottom: 0; left: 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px;
+      background: var(--card-bg);
+      box-shadow: 0 -2px 5px var(--shadow);
+      z-index: 999;
+    }
+    .bottom-bar button {
+      width: 90%;
+      padding: 14px 0;
+      font-size: 1em;
+      border-radius: 30px;
+    }
+  </style>
+</head>
+<body>
+
+<header>ANGH</header>
+<main>
+  <div class="filter-row">
+    <input id="filterName" type="text" placeholder="Search by name..." oninput="renderCustomers()" />
+    <button onclick="clearFilter()">Clear</button>
+  </div>
+  <div id="customerList"></div>
+</main>
+
+<div class="bottom-bar">
+  <button onclick="showCustomerModal()">➕ Add Customer</button>
+</div>
+
+<script>
+  const customers = JSON.parse(localStorage.getItem('customers')) || [];
+
+  function saveData() {
+    localStorage.setItem('customers', JSON.stringify(customers));
+  }
+
+  function showCustomerModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h3>Add Customer</h3>
+        <input id="name" type="text" placeholder="Customer Name" />
+        <input id="phone" type="tel" placeholder="Phone Number (Optional)" />
+        <button onclick="addCustomer(this)">Add</button>
+        <button onclick="this.closest('.modal').remove()">Cancel</button>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+
+  function addCustomer(button) {
+    const name = document.getElementById('name').value.trim();
+    const phone = document.getElementById('phone').value.trim();
+    if (!name) return alert('Customer name is required.');
+    const newCustomer = { name, phone, transactions: [] };
+    customers.push(newCustomer);
+    saveData();
+    syncToSheet({ name, phone, type: 'new_customer', date: new Date().toISOString() });
+    button.closest('.modal').remove();
+    renderCustomers();
+  }
+
+  function openCustomerPage(index) {
+    const customer = customers[index];
+    localStorage.setItem('currentCustomer', JSON.stringify({ ...customer, index }));
+    window.location.href = 'customer.html';
+  }
+
+  function calculateBalance(transactions) {
+    return transactions.reduce((total, t) => total + (t.type === 'credit' ? t.amount : -t.amount), 0);
+  }
+
+  function clearFilter() {
+    document.getElementById('filterName').value = '';
+    renderCustomers();
+  }
+
+  function renderCustomers() {
+    const filterName = document.getElementById('filterName').value.toLowerCase();
+    const container = document.getElementById('customerList');
+    container.innerHTML = '';
+    customers.forEach((c, i) => {
+      if (filterName && !c.name.toLowerCase().includes(filterName)) return;
+      const balance = calculateBalance(c.transactions);
+      const balanceClass = balance >= 0 ? 'credit' : 'debit';
+
+      const card = document.createElement('div');
+      card.className = 'customer-card';
+      card.onclick = function () { openCustomerPage(i); };
+      card.innerHTML = `
+        <div class="customer-name">${c.name}</div>
+        <div class="balance ${balanceClass}">₹${balance.toFixed(2)}</div>`;
+      container.appendChild(card);
+    });
+  }
+
+  function syncToSheet(entry) {
+    fetch('https://script.google.com/macros/s/AKfycbyclm2oxI4QzBVvkJvJa1U-BaoTxPK7qiHN-gBPh2pyphjDD5BpUgFSl0usMrs-so6lTA/exec', {
+      method: 'POST',
+      body: JSON.stringify(entry),
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }).then(res => console.log('Synced:', entry)).catch(err => console.error('Sync failed', err));
+  }
+
+  renderCustomers();
+</script>
+
+</body>
+</html>

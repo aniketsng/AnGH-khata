@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Customer Ledger - ANGH</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family:'Segoe UI', sans-serif; margin:0; background:#f5f5f5; color:#333; padding:16px; padding-bottom:80px; }
+    header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; font-size:1.2em; font-weight:bold; margin-bottom:10px; }
+    .back-btn { background:#444; color:white; border:none; padding:6px 10px; font-size:0.9em; border-radius:6px; cursor:pointer; }
+    .balance { font-weight:bold; }
+    .balance.green { color:green; }
+    .balance.red { color:red; }
+    .entry { background:white; padding:12px; margin:10px 0; border-radius:6px; display:flex; justify-content:space-between; align-items:center; }
+    .credit { color:green; }
+    .debit { color:red; }
+    .buttons { display:flex; gap:8px; }
+    button { border:none; padding:6px 10px; font-size:0.9em; border-radius:6px; cursor:pointer; }
+    .edit-btn { background:#1976d2; color:white; }
+    .delete-btn { background:#d32f2f; color:white; }
+    .export-btn { background:#388e3c; color:white; padding:6px 12px; font-size:0.9em; border-radius:6px; margin:10px; cursor:pointer; }
+    .export-btn:hover { background:#2e7d32; }
+    .bottom-bar { position:fixed; bottom:0; left:0; width:100%; display:flex; justify-content:space-around; padding:12px; background:white; box-shadow:0 -2px 5px rgba(0,0,0,0.1); }
+    .bottom-bar button { width:45%; padding:14px 0; font-size:1em; border-radius:30px; }
+    .credit-btn { background:green; color:white; }
+    .debit-btn { background:red; color:white; }
+    .modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:999; }
+    .modal-content { background:white; padding:24px; border-radius:10px; width:90%; max-width:400px; box-shadow:0 8px 16px rgba(0,0,0,0.3); animation:fadeIn 0.3s ease-in-out; }
+    .modal-content h3 { margin-top:0; color:#333; text-align:center; }
+    .modal-content input { width:100%; margin:10px 0; padding:12px; font-size:1em; border:1px solid #ccc; border-radius:6px; }
+    .modal-content button { margin-top:10px; padding:12px; font-size:1em; border-radius:6px; width:100%; cursor:pointer; border:none; }
+    .modal-content button:first-of-type { background:#4caf50; color:white; }
+    .modal-content button:last-of-type { background:#e0e0e0; color:#333; }
+
+    @keyframes fadeIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
+  </style>
+</head>
+<body>
+  <button class="back-btn" onclick="goBack()">⬅ Back</button>
+
+  <header>
+    <span id="customerName">Customer Name</span>
+    <button class="export-btn" id="exportPDF">📄 Export PDF</button>
+    <span id="runningBalance" class="balance">₹0.00</span>
+  </header>
+
+  <div id="entries"></div>
+
+  <div class="bottom-bar">
+    <button class="credit-btn" onclick="openEntryModal('credit')">➕ Credit</button>
+    <button class="debit-btn" onclick="openEntryModal('debit')">➖ Debit</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script>
+    const data = JSON.parse(localStorage.getItem('currentCustomer'));
+    const customers = JSON.parse(localStorage.getItem('customers')) || [];
+    const entriesDiv = document.getElementById('entries');
+    const customerName = document.getElementById('customerName');
+    const runningBalanceEl = document.getElementById('runningBalance');
+
+    if (!data) {
+      alert('Customer not found');
+      goBack();
+    } else {
+      customerName.innerText = data.name;
+      renderEntries();
+    }
+
+    function renderEntries() {
+      entriesDiv.innerHTML = '';
+      const customer = customers[data.index];
+      let balance = 0;
+      customer.transactions.forEach((entry, i) => {
+        balance += entry.type === 'credit' ? entry.amount : -entry.amount;
+        const div = document.createElement('div');
+        div.className = 'entry';
+        div.innerHTML = `
+          <div>
+            <div class="${entry.type}">₹${entry.amount.toFixed(2)} – ${entry.type.toUpperCase()}</div>
+            <small>${entry.note || ''} (${new Date(entry.date).toLocaleDateString()})</small>
+          </div>
+          <div class="buttons">
+            <button class="edit-btn" onclick="editEntry(${i})">Edit</button>
+            <button class="delete-btn" onclick="deleteEntry(${i})">Delete</button>
+          </div>`;
+        entriesDiv.appendChild(div);
+      });
+
+      runningBalanceEl.textContent = `₹${balance.toFixed(2)}`;
+      runningBalanceEl.className = 'balance ' + (balance >= 0 ? 'green' : 'red');
+    }
+
+    function goBack() {
+      window.location.href = 'index.html';
+    }
+
+    function deleteEntry(index) {
+      if (!confirm('Delete this entry?')) return;
+      const customer = customers[data.index];
+      customer.transactions.splice(index, 1);
+      localStorage.setItem('customers', JSON.stringify(customers));
+      renderEntries();
+    }
+
+    function editEntry(index) {
+      const customer = customers[data.index];
+      openEntryModal(customer.transactions[index].type, index, customer.transactions[index]);
+    }
+
+    function openEntryModal(type, editIndex = null, existing = null) {
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal-content">
+          <h3>${editIndex !== null ? 'Edit' : 'Add'} ${type.charAt(0).toUpperCase() + type.slice(1)}</h3>
+          <input id="amount" type="number" placeholder="Amount" value="${existing ? existing.amount : ''}" />
+          <input id="note" type="text" placeholder="Note (optional)" value="${existing ? existing.note : ''}" />
+          <button onclick="submitEntry('${type}', ${editIndex})">${editIndex !== null ? 'Update' : 'Add'} Entry</button>
+          <button onclick="this.closest('.modal').remove()">Cancel</button>
+        </div>`;
+      document.body.appendChild(modal);
+    }
+
+    function submitEntry(type, editIndex) {
+      const amount = parseFloat(document.getElementById('amount').value);
+      const note = document.getElementById('note').value;
+      if (!amount || isNaN(amount)) return alert('Invalid amount');
+      const customer = customers[data.index];
+      const newEntry = { amount, note, type, date: new Date().toISOString() };
+
+      if (editIndex !== null) {
+        customer.transactions[editIndex] = newEntry;
+      } else {
+        customer.transactions.push(newEntry);
+        syncToSheet({
+          name: customer.name,
+          phone: customer.phone,
+          type,
+          amount,
+          note,
+          date: newEntry.date
+        });
+      }
+
+      localStorage.setItem('customers', JSON.stringify(customers));
+      renderEntries();
+      document.querySelector('.modal').remove();
+    }
+
+    document.getElementById('exportPDF').addEventListener('click', () => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const customer = customers[data.index];
+      doc.setFontSize(16);
+      doc.text(`Customer: ${customer.name}`, 20, 20);
+      let y = 30;
+      customer.transactions.forEach((entry, i) => {
+        const date = new Date(entry.date).toLocaleDateString();
+        doc.setFontSize(12);
+        doc.text(`${i + 1}. ₹${entry.amount.toFixed(2)} – ${entry.type.toUpperCase()} (${date}) ${entry.note || ''}`, 20, y);
+        y += 8;
+      });
+      doc.save(`${customer.name}_ledger.pdf`);
+    });
+
+    function syncToSheet(entry) {
+      fetch('https://script.google.com/macros/s/AKfycbyclm2oxI4QzBVvkJvJa1U-BaoTxPK7qiHN-gBPh2pyphjDD5BpUgFSl0usMrs-so6lTA/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry)
+      })
+      .then(res => console.log('Synced:', entry))
+      .catch(err => console.error('Sync failed', err));
+    }
+  </script>
+</body>
+</html>
